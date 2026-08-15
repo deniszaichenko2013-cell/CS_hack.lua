@@ -1,5 +1,5 @@
 --[[
-    Universal CS Hack - GUI Edition
+    Universal CS Hack - GUI Edition (Fixed & Optimized)
     Полное меню с кнопками
     Fox & Jack Production
 ]]
@@ -20,7 +20,7 @@ local settings = {
     spinSpeed = 5,
 }
 
--- ESP
+-- ESP кеш
 local espObjects = {}
 
 -- Враги
@@ -66,7 +66,7 @@ local function doAimbot()
     end
 end
 
--- SpinBot
+-- SpinBot (Исправлено: теперь крутит только персонажа, не ломая камеру)
 local function doSpinBot()
     if not settings.spinbot then return end
     local char = player.Character
@@ -76,14 +76,13 @@ local function doSpinBot()
     if root then
         root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(settings.spinSpeed * 3), 0)
     end
-    camera.CFrame = camera.CFrame * CFrame.Angles(0, math.rad(settings.spinSpeed), 0)
 end
 
--- Triggerbot
+-- Triggerbot (Исправлено на os.clock)
 local lastShot = 0
 local function doTriggerbot()
     if not settings.triggerbot then return end
-    if tick() - lastShot < 0.15 then return end
+    if os.clock() - lastShot < 0.15 then return end
     
     local char = player.Character
     if not char then return end
@@ -93,14 +92,14 @@ local function doTriggerbot()
             local target = findTarget()
             if target then
                 v:Activate()
-                lastShot = tick()
+                lastShot = os.clock()
                 break
             end
         end
     end
 end
 
--- BHop
+-- BHop (Полностью переписан на новый Raycast)
 local function doBHop()
     if not settings.bhop then return end
     
@@ -115,20 +114,29 @@ local function doBHop()
     
     local root = char:FindFirstChild("HumanoidRootPart")
     if root then
-        local ray = Ray.new(root.Position, Vector3.new(0, -3.5, 0))
-        if workspace:FindPartOnRay(ray, char) then
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {char}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        
+        -- Пускаем луч вниз на 3.5 ступени
+        local raycastResult = workspace:Raycast(root.Position, Vector3.new(0, -3.5, 0), raycastParams)
+        if raycastResult then
             hum.Jump = true
         end
     end
 end
 
--- ESP
-local function updateESP()
+-- Очистка ESP
+local function clearESP()
     for _, obj in pairs(espObjects) do
         if obj then pcall(function() obj:Remove() end) end
     end
     espObjects = {}
-    
+end
+
+-- ESP (Перерисовывается только при включенном режиме)
+local function updateESP()
+    clearESP()
     if not settings.esp then return end
     
     for _, p in pairs(getEnemies()) do
@@ -183,7 +191,6 @@ local function createGUI()
     main.Draggable = true
     main.Parent = sg
     
-    -- Title
     local title = Instance.new("TextLabel")
     title.Text = "UNIVERSAL HACK"
     title.Size = UDim2.new(1, 0, 0, 35)
@@ -195,7 +202,8 @@ local function createGUI()
     
     local yPos = 45
     
-    local function createToggle(name, default)
+    -- Оптимизированный переключатель: сразу меняет глобальные настройки
+    local function createToggle(name, settingKey, default)
         local btn = Instance.new("TextButton")
         btn.Text = name .. ": " .. (default and "ON" or "OFF")
         btn.Size = UDim2.new(0.85, 0, 0, 35)
@@ -206,33 +214,22 @@ local function createGUI()
         btn.TextSize = 14
         btn.Parent = main
         
-        local state = default
+        settings[settingKey] = default
+        
         btn.MouseButton1Click:Connect(function()
-            state = not state
-            btn.Text = name .. ": " .. (state and "ON" or "OFF")
-            btn.BackgroundColor3 = state and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+            settings[settingKey] = not settings[settingKey]
+            btn.Text = name .. ": " .. (settings[settingKey] and "ON" or "OFF")
+            btn.BackgroundColor3 = settings[settingKey] and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
         end)
         
         yPos = yPos + 40
-        return function() return state end
     end
     
-    local getAimbot = createToggle("Aimbot", false)
-    local getSpinbot = createToggle("SpinBot", false)
-    local getTrigger = createToggle("Triggerbot", false)
-    local getBhop = createToggle("BunnyHop", false)
-    local getESP = createToggle("ESP", false)
-    
-    -- Подключаем к настройкам
-    spawn(function()
-        while task.wait(0.1) do
-            settings.aimbot = getAimbot()
-            settings.spinbot = getSpinbot()
-            settings.triggerbot = getTrigger()
-            settings.bhop = getBhop()
-            settings.esp = getESP()
-        end
-    end)
+    createToggle("Aimbot", "aimbot", false)
+    createToggle("SpinBot", "spinbot", false)
+    createToggle("Triggerbot", "triggerbot", false)
+    createToggle("BunnyHop", "bhop", false)
+    createToggle("ESP", "esp", false)
     
     -- Закрыть
     local close = Instance.new("TextButton")
@@ -245,13 +242,12 @@ local function createGUI()
     close.Parent = main
     close.MouseButton1Click:Connect(function()
         settings.esp = false
-        updateESP()
+        clearESP()
         sg:Destroy()
     end)
     
-    -- Подсказка
     local hint = Instance.new("TextLabel")
-    hint.Text = "Нажимай на кнопки!"
+    hint.Text = "Fox & Jack Production"
     hint.Size = UDim2.new(1, 0, 0, 20)
     hint.Position = UDim2.new(0, 0, 0, 295)
     hint.BackgroundTransparency = 1
@@ -261,10 +257,10 @@ local function createGUI()
     hint.Parent = main
 end
 
--- Запуск
+-- Запуск интерфейса
 createGUI()
 
--- Главный цикл
+-- Главный цикл обновлений движка
 runService.RenderStepped:Connect(function()
     pcall(doSpinBot)
     pcall(doAimbot)
@@ -273,4 +269,4 @@ runService.RenderStepped:Connect(function()
     pcall(updateESP)
 end)
 
-print("Universal Hack GUI loaded!")
+print("Universal Hack GUI loaded successfully!")
